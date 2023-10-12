@@ -15,42 +15,23 @@ import {
 } from "@mui/material";
 import MaterialReactTable from "material-react-table";
 import React, { useCallback, useMemo, useState } from "react";
+import { CSVLink } from "react-csv";
 import { useQuery } from "react-query";
-import { useLocation } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import axios from "../api/axios";
-import { createMovie, deleteMovie, getMovies, updateMovie } from "../api/endPoints";
+import {
+  createMovie,
+  deleteMovie,
+  getMovies,
+  updateMovie,
+} from "../api/endPoints";
 
 const Home = ({}) => {
-  const location = useLocation();
-  const from = location.state?.from?.pathname || "/";
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [tableData, setTableData] = useState(() => []);
   const [validationErrors, setValidationErrors] = useState({});
-  const withCredentials = false;   //for local testing
-
-  // const scrapData = () => {
-  //   Swal.fire({
-  //     title: "Are you sure?",
-  //     showCancelButton: true,
-  //     confirmButtonText: "Scrap",
-  //   }).then(async (result) => {
-  //     /* Read more about isConfirmed, isDenied below */
-  //     if (result.isConfirmed) {
-  //       try {
-  //         const response = await axios.post(postProcedure, {
-  //           headers: { "Content-Type": "application/json" },
-  //           withCredentials: true,
-  //         });
-  //         Swal.fire("Saved!", "", "success");
-  //       } catch (error) {
-  //         // console.log(error);
-  //         Swal.fire("Failed to run", "", "error");
-  //       }
-  //     }
-  //   });
-  // };
+  const withCredentials = false; //for local testing
 
   const { data, status } = useQuery("movieData", async () => {
     const response = await axios.get(getMovies, {
@@ -63,19 +44,46 @@ const Home = ({}) => {
     return "";
   });
 
+ const downloadText = () => {
+    const element = document.createElement("a");
+    const file = new Blob([JSON.stringify(tableData)], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = "movies-list.txt";
+    document.body.appendChild(element); // Required for this to work in FireFox
+    element.click();
+  }
+  
+
+
   const handleCreateNewRow = async (values) => {
     try {
-      const response = await axios.post(createMovie, values, {
+      let format = values.duration.slice(-1);
+      if (format === "m") {
+        values.duration = (parseFloat(values.duration.slice(0, -1)) / 60)
+          .toFixed(2)
+          .replace(/[.,]00$/, "");
+      } else {
+        values.duration = parseFloat(values.duration.slice(0, -1))
+          .toFixed(2)
+          .replace(/[.,]00$/, "");
+      }
+      values.rating = parseFloat(values.rating).toFixed(2);
+     await axios.post(createMovie, values, {
         headers: { "Content-Type": "application/json" },
         withCredentials: withCredentials,
       });
+      const response = await axios.get(getMovies, {
+        headers: { "Content-Type": "application/json" },
+        withCredentials: withCredentials,
+      });  
+      setTableData([...response.data.data]);
       // console.log(response);
       toast.success("Successfully add new movie !", {
         position: toast.POSITION.BOTTOM_CENTER,
       });
     } catch (error) {
-      // console.log(error);
-      toast.error("Failed to add new movie !", {
+      console.log(error);
+      toast.error("Failed to add new movie ! " + error.response.data.message, {
         position: toast.POSITION.BOTTOM_CENTER,
       });
     }
@@ -83,22 +91,34 @@ const Home = ({}) => {
 
   const handleSaveRowEdits = async ({ exitEditingMode, row, values }) => {
     // if (!Object.keys(validationErrors).length) {
+    let format = values.duration.slice(-1);
+    if (format === "m") {
+      values.duration = parseFloat(values.duration.slice(0, -1) / 60)
+        .toFixed(2)
+        .replace(/[.,]00$/, "");
+    } else {
+      values.duration = parseFloat(values.duration.slice(0, -1))
+        .toFixed(2)
+        .replace(/[.,]00$/, "");
+    }
+    values.rating = parseFloat(values.rating)
+      .toFixed(2)
+      .replace(/[.,]00$/, "");
 
     try {
-      const response = await axios.put(updateMovie.replace(":id", row.getValue("id")), values, {
+      await axios.put(updateMovie.replace(":id", row.getValue("id")), values, {
         headers: { "Content-Type": "application/json" },
         withCredentials: withCredentials,
       });
-      // console.log(response);
       let newData = tableData;
       newData[row.index] = values;
       setTableData([...newData]);
-      toast.success("Successfully update  item !", {
+      toast.success("Successfully update  movie!", {
         position: toast.POSITION.BOTTOM_CENTER,
       });
     } catch (error) {
       console.log(error.response.data.message);
-      toast.error("Failed to  update  item! "+error.response.data.message, {
+      toast.error("Failed to  update  movie! " + error.response.data.message, {
         position: toast.POSITION.BOTTOM_CENTER,
       });
     }
@@ -124,24 +144,24 @@ const Home = ({}) => {
         return;
       }
       try {
-        const response = await axios.delete(
-          deleteMovie.replace(":id", row.getValue("id")),
-          {
-            headers: { "Content-Type": "application/json" },
-            withCredentials: withCredentials,
-          }
-        );
+        await axios.delete(deleteMovie.replace(":id", row.getValue("id")), {
+          headers: { "Content-Type": "application/json" },
+          withCredentials: withCredentials,
+        });
         // console.log(response);
         let newData = tableData.splice(row.index, 1);
         setTableData([...newData]);
-        toast.success("Successfully deleted  item !", {
+        toast.success("Successfully deleted  movie !", {
           position: toast.POSITION.BOTTOM_CENTER,
         });
       } catch (error) {
         // console.log(error);
-        toast.error("Failed to  delete  item!", {
-          position: toast.POSITION.BOTTOM_CENTER,
-        });
+        toast.error(
+          "Failed to  delete  movie! " + error.response.data.message,
+          {
+            position: toast.POSITION.BOTTOM_CENTER,
+          }
+        );
       }
 
       //send api delete request here, then refetch or update local table data for re-render
@@ -159,16 +179,26 @@ const Home = ({}) => {
         helperText: validationErrors[cell.id],
         onBlur: (event) => {
           const isValid =
-            cell.column.id === "email"
-              ? validateEmail(event.target.value)
-              : cell.column.id === "age"
-              ? validateAge(+event.target.value)
+            cell.column.id === "name"
+              ? validateName(event.target.value)
+              : cell.column.id === "duration"
+              ? validateDuration(event.target.value)
+              : cell.column.id === "rating"
+              ? validateRating(+event.target.value)
               : validateRequired(event.target.value);
+          const validationMessage =
+            cell.column.id === "name"
+              ? "Name is required, 2-100 characters"
+              : cell.column.id === "duration"
+              ? "Duration in  1-720 minutes or 0.1-12 hours, format: Xh or Xm"
+              : cell.column.id === "rating"
+              ? "Rating out of 10, Required, between 0 and 10, decimal values allowed"
+              : "This field is required";
           if (!isValid) {
             //set validation error for cell if invalid
             setValidationErrors({
               ...validationErrors,
-              [cell.id]: `${cell.column.columnDef.header} is required`,
+              [cell.id]: validationMessage,
             });
           } else {
             //remove validation error for cell if valid
@@ -200,6 +230,7 @@ const Home = ({}) => {
         muiTableBodyCellEditTextFieldProps: ({ cell }) => ({
           ...getCommonEditTextFieldProps(cell),
         }),
+        validate: (rowData) => Boolean(rowData.name),
       },
       {
         accessorKey: "duration",
@@ -208,6 +239,7 @@ const Home = ({}) => {
         muiTableBodyCellEditTextFieldProps: ({ cell }) => ({
           ...getCommonEditTextFieldProps(cell),
         }),
+        Cell: (props) => <div> {props.renderedCellValue} h </div>,
       },
       {
         accessorKey: "rating",
@@ -229,10 +261,28 @@ const Home = ({}) => {
           <Typography variant="h5" component="h2">
             MOVIES DATABASE
           </Typography>
-
-          {/* <Button onClick={() => scrapData()} variant="outlined">
-            DOWNLOAD LIST
-          </Button> */}
+        
+          <Stack 
+          flexDirection={'row'}
+         
+          >
+          <Button 
+          variant="outlined"
+          style={{marginRight: '10px'}}
+          >
+           {/* Donwload CSV file */}
+          <CSVLink data={tableData} 
+          filename={"movies-list.csv"}
+          className="btn btn-primary"
+          target="_blank"
+          >
+            Download CSV
+          </CSVLink>
+          </Button>
+         
+           {/* Donwload TXT file */}
+           <Button   variant="outlined" onClick={downloadText}>Download Text</Button>
+           </Stack>
         </Box>
         <MaterialReactTable
           displayColumnDefOptions={{
@@ -299,6 +349,27 @@ export const CreateNewAccountModal = ({ open, columns, onClose, onSubmit }) => {
 
   // console.log(values)
   const handleSubmit = async () => {
+    // validation
+    // console.log(values);
+    if (!values.name) {
+      toast.error("Name is required !", {
+        position: toast.POSITION.BOTTOM_CENTER,
+      });
+      return;
+    }
+    if (
+      !values.duration ||
+      !validateDuration(values.duration) ||
+      !values.name ||
+      !validateName(values.name) ||
+      !values.rating ||
+      !validateRating(values.rating)
+    ) {
+      toast.error("Remove the Errors", {
+        position: toast.POSITION.BOTTOM_CENTER,
+      });
+      return;
+    }
     //put your validation logic here
     // console.log(values);
 
@@ -307,7 +378,7 @@ export const CreateNewAccountModal = ({ open, columns, onClose, onSubmit }) => {
   };
 
   return (
-    <Dialog open={open}>
+    <Dialog open={open} size="large">
       <DialogTitle textAlign="center">Create New Movie</DialogTitle>
       <DialogContent>
         <form onSubmit={(e) => e.preventDefault()}>
@@ -317,6 +388,7 @@ export const CreateNewAccountModal = ({ open, columns, onClose, onSubmit }) => {
               minWidth: { xs: "300px", sm: "360px", md: "400px" },
               gap: "1.5rem",
             }}
+            marginTop={2}
           >
             {columns.map((column) => {
               // Remove columns from new update
@@ -333,6 +405,12 @@ export const CreateNewAccountModal = ({ open, columns, onClose, onSubmit }) => {
                     onChange={(e) =>
                       setValues({ ...values, [e.target.name]: e.target.value })
                     }
+                    {...column.muiTableBodyCellEditTextFieldProps({
+                      cell: {
+                        id: column.accessorKey,
+                        column,
+                      },
+                    })}
                   />
                 );
               }
@@ -351,13 +429,21 @@ export const CreateNewAccountModal = ({ open, columns, onClose, onSubmit }) => {
 };
 
 const validateRequired = (value) => !!value.length;
-const validateEmail = (email) =>
-  !!email.length &&
-  email
-    .toLowerCase()
-    .match(
-      /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
-    );
-const validateAge = (age) => age >= 18 && age <= 50;
+const validateDuration = (duration) => {
+  //get last char
+  const lastChar = duration.slice(-1);
+  if (lastChar === "h" || lastChar === "m") {
+    //get number value
+    const number = duration.slice(0, -1);
+    if (lastChar === "h") {
+      return number >= 0.1 && number <= 12;
+    } else {
+      return number >= 1 && number <= 720;
+    }
+  } else return false;
+};
+
+const validateRating = (age) => age > 0 && age <= 10;
+const validateName = (name) => name.length >= 2 && name.length <= 100;
 
 export default Home;
